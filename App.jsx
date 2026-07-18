@@ -7,8 +7,7 @@ import {
   Landmark, Wallet
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
-
-const LOGO_SRC = "/logo.png";
+import LOGO_SRC from "./logo.png";
 
 const CATEGORIES = [
   { id: "valor_viaje", label: "Valor del viaje", icon: Landmark, type: "ingreso" },
