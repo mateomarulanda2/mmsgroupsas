@@ -5,7 +5,7 @@ import {
   Eye, EyeOff, LogOut, KeyRound, UserPlus, Percent, Gift,
   Droplets, PackagePlus, PackageMinus, MapPin, ArrowRight,
   Landmark, Wallet, ParkingCircle, Route, Cog, HardHat,
-  Headset, Hammer
+  Headset, Hammer, MoreHorizontal
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import LOGO_SRC from "./logo.png";
@@ -25,6 +25,7 @@ const CATEGORIES = [
   { id: "mano_de_obra", label: "Mano de obra", icon: HardHat, type: "gasto" },
   { id: "comision_despachador", label: "Comisión despachador", icon: Headset, type: "gasto" },
   { id: "mantenimiento", label: "Mantenimiento", icon: Hammer, type: "gasto" },
+  { id: "otros", label: "Otros", icon: MoreHorizontal, type: "gasto" },
 ];
 
 // El conductor recibe automáticamente este porcentaje del valor del viaje —
@@ -37,6 +38,9 @@ const DEFAULT_TRUCKS = [
 ];
 
 const catInfo = (id) => CATEGORIES.find((c) => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
+// For "Otros" the driver's own description IS the title (so the admin sees
+// what it actually was, not just "Otros"). Every other category keeps its label.
+const entryTitle = (entry) => (entry.category === "otros" && entry.note ? entry.note : catInfo(entry.category).label);
 const fmtMoney = (n) => "$" + Number(n || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 });
 
 // Groups a flat list of entries (each tagged with truckId) into "viajes"
@@ -112,6 +116,7 @@ export default function App() {
   const [phase, setPhase] = useState("loading"); // loading | bootstrap | login | master | driver
   const [trucks, setTrucks] = useState(DEFAULT_TRUCKS);
   const [expenses, setExpenses] = useState({});
+  const [tripPayments, setTripPayments] = useState({}); // tripKey -> { paid, paidAt }
   const [masterAuth, setMasterAuth] = useState(null); // { username, password } | null
   const [drivers, setDrivers] = useState([]);
   const [session, setSession] = useState(null);
@@ -160,6 +165,17 @@ export default function App() {
       setExpenses(grouped);
     } catch {
       // leave expenses as-is on failure
+    }
+
+    try {
+      const { data: paymentRows } = await supabase.from("trip_payments").select("*");
+      const paymentMap = {};
+      for (const p of paymentRows || []) {
+        paymentMap[p.trip_key] = { paid: Boolean(p.paid), paidAt: p.paid_at ? Number(p.paid_at) : null };
+      }
+      setTripPayments(paymentMap);
+    } catch {
+      // leave tripPayments as-is on failure
     }
 
     try {
@@ -343,6 +359,16 @@ export default function App() {
     setExpenses((prev) => ({ ...prev, [truckId]: (prev[truckId] || []).filter((e) => e.id !== id) }));
   }, []);
 
+  const setTripPaid = useCallback(async (tripKey, paid) => {
+    const paidAt = paid ? Date.now() : null;
+    try {
+      await supabase.from("trip_payments").upsert({ trip_key: tripKey, paid, paid_at: paidAt });
+    } catch {
+      // ignore — UI already reflects the change locally
+    }
+    setTripPayments((prev) => ({ ...prev, [tripKey]: { paid, paidAt } }));
+  }, []);
+
   const logout = () => {
     setSession(null);
     setPhase("login");
@@ -387,6 +413,8 @@ export default function App() {
           trucks={trucks}
           expenses={expenses}
           auth={auth}
+          tripPayments={tripPayments}
+          onSetTripPaid={setTripPaid}
           onLogout={logout}
           onAdd={addExpense}
           onDelete={deleteExpense}
@@ -401,6 +429,7 @@ export default function App() {
           truck={trucks.find((t) => t.id === auth.drivers.find((d) => d.id === session.driverId)?.truckId)}
           trucks={trucks}
           expenses={expenses[auth.drivers.find((d) => d.id === session.driverId)?.truckId] || []}
+          tripPayments={tripPayments}
           onAdd={(entry) => {
             const d = auth.drivers.find((x) => x.id === session.driverId);
             addExpense(d.truckId, entry);
@@ -712,7 +741,7 @@ function ExpenseForm({ onAdd, driverName, driverOptions, onPickDriver }) {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  const canSubmit = amount && Number(amount) > 0 && date && driverName;
+  const canSubmit = amount && Number(amount) > 0 && date && driverName && (category !== "otros" || note.trim());
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -794,12 +823,16 @@ function ExpenseForm({ onAdd, driverName, driverOptions, onPickDriver }) {
       )}
 
       <div className="mt-3">
-        <label className="text-neutral-500 text-[10px] uppercase block mb-1">Nota (opcional)</label>
+        <label className="text-neutral-500 text-[10px] uppercase block mb-1">
+          {category === "otros" ? "Descripción (obligatoria)" : "Nota (opcional)"}
+        </label>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Ej: peaje Andes, factura #123"
-          className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-300 text-sm focus:outline-none focus:border-amber-500"
+          placeholder={category === "otros" ? "Ej: repuesto de emergencia, multa, etc." : "Ej: peaje Andes, factura #123"}
+          className={`w-full bg-neutral-950 border rounded-md px-3 py-2 text-neutral-300 text-sm focus:outline-none ${
+            category === "otros" ? "border-amber-700 focus:border-amber-500" : "border-neutral-800 focus:border-amber-500"
+          }`}
         />
       </div>
 
@@ -831,11 +864,14 @@ function ReceiptCard({ entry, onDelete, showDriver }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-neutral-100 uppercase text-sm" style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}>{cat.label}</span>
+            <span className="text-neutral-100 uppercase text-sm" style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}>{entryTitle(entry)}</span>
             <span className={`text-base shrink-0 ${amountColorClass}`}>
               {isAdvance ? "◆" : isIncome ? "+" : "−"} {fmtMoney(entry.amount)}
             </span>
           </div>
+          {entry.category === "otros" && entry.note && (
+            <div className="text-neutral-600 text-[10px] mt-0.5 uppercase tracking-wide">Otros</div>
+          )}
           {isAdvance && (
             <div className="text-sky-600 text-[10px] mt-0.5">Anticipo — no se suma al neto ni a los gastos</div>
           )}
@@ -849,7 +885,7 @@ function ReceiptCard({ entry, onDelete, showDriver }) {
               <span className="truncate">{entry.origin || "?"} <ArrowRight size={10} className="inline mx-0.5" /> {entry.destination || "?"}</span>
             </div>
           )}
-          {entry.note && (
+          {entry.note && entry.category !== "otros" && (
             <div className="flex items-start gap-1 text-neutral-400 text-xs mt-1">
               <StickyNote size={11} className="mt-0.5 shrink-0" /> <span className="truncate">{entry.note}</span>
             </div>
@@ -877,7 +913,7 @@ function AddToTripForm({ trip, driverName, onAdd }) {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  const canSubmit = amount && Number(amount) > 0 && date;
+  const canSubmit = amount && Number(amount) > 0 && date && (category !== "otros" || note.trim());
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -930,12 +966,16 @@ function AddToTripForm({ trip, driverName, onAdd }) {
       )}
 
       <div className="mt-3">
-        <label className="text-neutral-500 text-[10px] uppercase block mb-1">Nota (opcional)</label>
+        <label className="text-neutral-500 text-[10px] uppercase block mb-1">
+          {category === "otros" ? "Descripción (obligatoria)" : "Nota (opcional)"}
+        </label>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Ej: factura #123"
-          className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-300 text-sm focus:outline-none focus:border-amber-500"
+          placeholder={category === "otros" ? "Ej: repuesto de emergencia, multa, etc." : "Ej: factura #123"}
+          className={`w-full bg-neutral-950 border rounded-md px-3 py-2 text-neutral-300 text-sm focus:outline-none ${
+            category === "otros" ? "border-amber-700 focus:border-amber-500" : "border-neutral-800 focus:border-amber-500"
+          }`}
         />
       </div>
 
@@ -1033,7 +1073,7 @@ function NewTripForm({ driverName, onCreate }) {
   );
 }
 
-function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onExit }) {
+function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, onAdd, onDelete, onExit }) {
   const [view, setView] = useState("trips"); // 'trips' | 'newEntry' | 'detail'
   const [selectedTripKey, setSelectedTripKey] = useState(null);
 
@@ -1146,6 +1186,7 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
                     trip={trip}
                     trucks={trucks}
                     showTruck={false}
+                    payment={tripPayments[trip.key]}
                     onClick={() => { setSelectedTripKey(trip.key); setView("detail"); }}
                   />
                 ))}
@@ -1196,6 +1237,21 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
                 <span className="text-sky-500 text-sm">◆ Anticipo {fmtMoney(selectedTrip.anticipos)}</span>
               )}
             </div>
+            {selectedTrip.ingresos > 0 && (() => {
+              const payment = tripPayments[selectedTrip.key];
+              const saldo = selectedTrip.ingresos - selectedTrip.anticipos;
+              return (
+                <div className={`mt-4 rounded-lg border p-3.5 ${payment?.paid ? "border-emerald-800/60 bg-emerald-950/20" : "border-red-900/60 bg-red-950/20"}`}>
+                  <div className="text-neutral-500 text-[10px] uppercase">Saldo que debe la empresa</div>
+                  <div className={`text-lg ${payment?.paid ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(saldo)}</div>
+                  {payment?.paid ? (
+                    <div className="text-emerald-600 text-[10px] mt-0.5">✓ Ya pagado</div>
+                  ) : (
+                    <div className="text-red-500 text-[10px] mt-0.5">Pendiente — solo el administrador puede marcarlo pagado</div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="mb-5">
@@ -1341,9 +1397,11 @@ function DriverAccountsPanel({ auth, trucks, onSaveAuth }) {
   );
 }
 
-function TripCard({ trip, trucks, onClick, showTruck }) {
+function TripCard({ trip, trucks, onClick, showTruck, payment }) {
   const truck = trucks.find((t) => t.id === trip.truckId);
   const hasRoute = Boolean(trip.origin && trip.destination);
+  const saldo = trip.ingresos - trip.anticipos;
+  const isPaid = payment?.paid;
   return (
     <button
       onClick={onClick}
@@ -1367,6 +1425,11 @@ function TripCard({ trip, trucks, onClick, showTruck }) {
             {showTruck && truck && (<><span>·</span><Truck size={11} /> {truckShort(truck, trucks)}</>)}
             {trip.drivers.length > 0 && (<><span>·</span><User size={11} /> {trip.drivers.join(", ")}</>)}
           </div>
+          {trip.ingresos > 0 && (
+            <div className={`text-[10px] mt-1 uppercase tracking-wide ${isPaid ? "text-emerald-500" : "text-red-400"}`}>
+              {isPaid ? "✓ Saldo pagado" : `Debe la empresa: ${fmtMoney(saldo)}`}
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           <div className={`text-lg ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(trip.neto)}</div>
@@ -1391,10 +1454,20 @@ function TripCard({ trip, trucks, onClick, showTruck }) {
   );
 }
 
-function TripDetail({ trip, trucks, onBack, onDelete }) {
+function TripDetail({ trip, trucks, onBack, onDelete, payment, onSetPaid }) {
   const truck = trucks.find((t) => t.id === trip.truckId);
   const hasRoute = Boolean(trip.origin && trip.destination);
   const sorted = [...trip.entries].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const saldo = trip.ingresos - trip.anticipos;
+  const isPaid = payment?.paid;
+  const [togglingPaid, setTogglingPaid] = useState(false);
+
+  const togglePaid = async () => {
+    if (!onSetPaid) return;
+    setTogglingPaid(true);
+    await onSetPaid(trip.key, !isPaid);
+    setTogglingPaid(false);
+  };
 
   return (
     <div>
@@ -1430,6 +1503,38 @@ function TripDetail({ trip, trucks, onBack, onDelete }) {
             <span className="text-sky-500 text-sm">◆ Anticipo {fmtMoney(trip.anticipos)}</span>
           )}
         </div>
+
+        {trip.ingresos > 0 && (
+          <div className={`mt-4 rounded-lg border p-3.5 ${isPaid ? "border-emerald-800/60 bg-emerald-950/20" : "border-red-900/60 bg-red-950/20"}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-neutral-500 text-[10px] uppercase">Saldo que debe la empresa</div>
+                <div className={`text-lg ${isPaid ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(saldo)}</div>
+                {isPaid && payment?.paidAt && (
+                  <div className="text-emerald-600 text-[10px] mt-0.5">✓ Pagado el {fmtDate(new Date(payment.paidAt).toISOString().slice(0, 10))}</div>
+                )}
+              </div>
+              {onSetPaid && (
+                <button
+                  onClick={togglePaid}
+                  disabled={togglingPaid}
+                  className={`flex items-center gap-1.5 rounded-md py-2 px-3 text-xs uppercase tracking-wide ${
+                    isPaid ? "border border-neutral-700 text-neutral-400 hover:border-red-600 hover:text-red-400" : "bg-emerald-600 text-neutral-950"
+                  }`}
+                  style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}
+                >
+                  {togglingPaid ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : isPaid ? (
+                    "Marcar como pendiente"
+                  ) : (
+                    <><Check size={14} /> Marcar como pagado</>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-5 flex flex-col gap-2.5">
@@ -1441,7 +1546,7 @@ function TripDetail({ trip, trucks, onBack, onDelete }) {
   );
 }
 
-function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, onRenameTrucks, onSaveAuth }) {
+function MasterDashboard({ trucks, expenses, auth, tripPayments = {}, onSetTripPaid, onLogout, onAdd, onDelete, onRenameTrucks, onSaveAuth }) {
   const [view, setView] = useState("trucks"); // 'trucks' | 'trips' | 'detail'
   const [selectedTruckId, setSelectedTruckId] = useState(null); // null while in 'trips' view means "todos los camiones"
   const [selectedTripKey, setSelectedTripKey] = useState(null);
@@ -1651,6 +1756,7 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
                     trip={trip}
                     trucks={trucks}
                     showTruck={selectedTruckId === null}
+                    payment={tripPayments[trip.key]}
                     onClick={() => { setSelectedTripKey(trip.key); setView("detail"); }}
                   />
                 ))}
@@ -1661,7 +1767,14 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
       )}
 
       {view === "detail" && selectedTrip && (
-        <TripDetail trip={selectedTrip} trucks={trucks} onBack={backToTrips} onDelete={onDelete} />
+        <TripDetail
+          trip={selectedTrip}
+          trucks={trucks}
+          onBack={backToTrips}
+          onDelete={onDelete}
+          payment={tripPayments[selectedTrip.key]}
+          onSetPaid={onSetTripPaid}
+        />
       )}
     </div>
   );
