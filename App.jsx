@@ -29,7 +29,7 @@ const CATEGORIES = [
 
 // El conductor recibe automáticamente este porcentaje del valor del viaje —
 // ya no se registra a mano, se calcula solo.
-const DRIVER_COMMISSION_RATE = 0.08;
+const DRIVER_COMMISSION_RATE = 0.085;
 
 const DEFAULT_TRUCKS = [
   { id: "camion1", brand: "", name: "", plate: "" },
@@ -951,6 +951,91 @@ function AddToTripForm({ trip, driverName, onAdd }) {
   );
 }
 
+function NewTripForm({ driverName, onCreate }) {
+  const [origin, setOrigin] = useState("");
+  const [destination, setDestination] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [busy, setBusy] = useState(false);
+
+  const canSubmit = origin.trim() && destination.trim() && amount && Number(amount) > 0 && date;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    await onCreate({
+      category: "valor_viaje",
+      amount: Number(amount),
+      date,
+      origin: origin.trim(),
+      destination: destination.trim(),
+      note: "",
+      driver: driverName,
+    });
+    setBusy(false);
+  };
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+      <div className="text-neutral-400 text-xs uppercase tracking-widest mb-1">Ingresar nuevo viaje</div>
+      <p className="text-neutral-600 text-xs mb-4">Establece la ruta y el valor del viaje — luego le vas sumando los gastos.</p>
+
+      <div className="mb-4">
+        <label className="text-neutral-500 text-[10px] uppercase block mb-1">Ruta del viaje</label>
+        <div className="flex items-center gap-2">
+          <input
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+            placeholder="Origen"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-amber-500"
+          />
+          <ArrowRight size={16} className="text-neutral-600 shrink-0" />
+          <input
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="Destino"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-neutral-500 text-[10px] uppercase block mb-1 flex items-center gap-1">
+            <Landmark size={11} /> Valor del viaje
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0"
+            className="w-full bg-neutral-950 border border-emerald-800/60 rounded-md px-3 py-2 text-emerald-400 text-lg focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+        <div>
+          <label className="text-neutral-500 text-[10px] uppercase block mb-1">Fecha</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 text-sm focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <button
+        disabled={!canSubmit || busy}
+        onClick={submit}
+        className="w-full mt-5 flex items-center justify-center gap-2 bg-emerald-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-neutral-950 rounded-md py-2.5 uppercase tracking-wide text-sm transition-colors"
+        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}
+      >
+        {busy ? <Loader2 size={16} className="animate-spin" /> : (<><Plus size={16} /> Crear viaje</>)}
+      </button>
+    </div>
+  );
+}
+
 function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onExit }) {
   const [view, setView] = useState("trips"); // 'trips' | 'newEntry' | 'detail'
   const [selectedTripKey, setSelectedTripKey] = useState(null);
@@ -1031,7 +1116,7 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
                   <span className="text-emerald-500">+{fmtMoney(totals.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.gastos)}</span>
                 </div>
                 {totals.comisionConductor > 0 && (
-                  <div className="text-amber-600 text-[10px] mt-0.5">− Comisión 8% {fmtMoney(totals.comisionConductor)}</div>
+                  <div className="text-amber-600 text-[10px] mt-0.5">− Porcentaje conductor (8.5%) {fmtMoney(totals.comisionConductor)}</div>
                 )}
                 {totals.anticipos > 0 && (
                   <div className="text-sky-500 text-[10px] mt-0.5">◆ Anticipo {fmtMoney(totals.anticipos)}</div>
@@ -1043,10 +1128,10 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
           <div className="px-5 mb-4">
             <button
               onClick={() => setView("newEntry")}
-              className="w-full flex items-center justify-center gap-2 bg-amber-500 text-neutral-950 rounded-lg py-3 uppercase tracking-wide text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-neutral-950 rounded-lg py-3 uppercase tracking-wide text-sm"
               style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}
             >
-              <Plus size={16} /> Registrar nuevo viaje o gasto
+              <Plus size={16} /> Ingresar nuevo viaje
             </button>
           </div>
 
@@ -1078,7 +1163,7 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
           <button onClick={backToTrips} className="flex items-center gap-1 text-neutral-500 text-sm mb-4 hover:text-neutral-300">
             <ArrowLeft size={16} /> Volver a mis viajes
           </button>
-          <ExpenseForm onAdd={handleNewEntry} driverName={driver.name} />
+          <NewTripForm driverName={driver.name} onCreate={handleNewEntry} />
         </>
       )}
 
@@ -1107,7 +1192,7 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
               <span className="text-emerald-500 text-sm">+{fmtMoney(selectedTrip.ingresos)}</span>
               <span className="text-amber-500 text-sm">−{fmtMoney(selectedTrip.gastos)}</span>
               {selectedTrip.comisionConductor > 0 && (
-                <span className="text-amber-600 text-sm">−8% {fmtMoney(selectedTrip.comisionConductor)}</span>
+                <span className="text-amber-600 text-sm">−% Conductor {fmtMoney(selectedTrip.comisionConductor)}</span>
               )}
               <span className={`text-sm ${selectedTrip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>Neto {fmtMoney(selectedTrip.neto)}</span>
               {selectedTrip.anticipos > 0 && (
@@ -1292,7 +1377,7 @@ function TripCard({ trip, trucks, onClick, showTruck }) {
             <span className="text-emerald-500">+{fmtMoney(trip.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(trip.gastos)}</span>
           </div>
           {trip.comisionConductor > 0 && (
-            <div className="text-amber-600 text-[10px] mt-0.5">−8% cond. {fmtMoney(trip.comisionConductor)}</div>
+            <div className="text-amber-600 text-[10px] mt-0.5">− % Conductor {fmtMoney(trip.comisionConductor)}</div>
           )}
           {trip.ingresos > 0 && (
             <div className={`text-[10px] mt-0.5 ${trip.neto >= 0 ? "text-emerald-600" : "text-red-500"}`}>
@@ -1341,7 +1426,7 @@ function TripDetail({ trip, trucks, onBack, onDelete }) {
           <span className="text-emerald-500 text-sm">+{fmtMoney(trip.ingresos)}</span>
           <span className="text-amber-500 text-sm">−{fmtMoney(trip.gastos)}</span>
           {trip.comisionConductor > 0 && (
-            <span className="text-amber-600 text-sm">−8% conductor {fmtMoney(trip.comisionConductor)}</span>
+            <span className="text-amber-600 text-sm">− Porcentaje conductor {fmtMoney(trip.comisionConductor)}</span>
           )}
           <span className={`text-sm ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>Neto {fmtMoney(trip.neto)}</span>
           {trip.anticipos > 0 && (
@@ -1443,7 +1528,7 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
                   <span className="text-emerald-500">+{fmtMoney(totals.grandIngresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.grandGastos)}</span>
                 </div>
                 {totals.grandComision > 0 && (
-                  <div className="text-amber-600 text-[10px] mt-0.5">− Comisión 8% {fmtMoney(totals.grandComision)}</div>
+                  <div className="text-amber-600 text-[10px] mt-0.5">− Porcentaje conductor (8.5%) {fmtMoney(totals.grandComision)}</div>
                 )}
                 {totals.grandAnticipos > 0 && (
                   <div className="text-sky-500 text-[10px] mt-0.5">◆ Anticipos {fmtMoney(totals.grandAnticipos)}</div>
@@ -1475,7 +1560,7 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
                         <span className="text-emerald-500">+{fmtMoney(totals.perTruck[t.id].ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.perTruck[t.id].gastos)}</span>
                       </div>
                       {totals.perTruck[t.id].comisionConductor > 0 && (
-                        <div className="text-amber-600 text-[10px] mt-0.5">−8% {fmtMoney(totals.perTruck[t.id].comisionConductor)}</div>
+                        <div className="text-amber-600 text-[10px] mt-0.5">− % Conductor {fmtMoney(totals.perTruck[t.id].comisionConductor)}</div>
                       )}
                       {totals.perTruck[t.id].anticipos > 0 && (
                         <div className="text-sky-500 text-[10px] mt-0.5">◆ {fmtMoney(totals.perTruck[t.id].anticipos)}</div>
