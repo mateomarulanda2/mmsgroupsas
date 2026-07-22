@@ -4,22 +4,32 @@ import {
   Loader2, Pencil, Check, X, Calendar, StickyNote, Lock,
   Eye, EyeOff, LogOut, KeyRound, UserPlus, Percent, Gift,
   Droplets, PackagePlus, PackageMinus, MapPin, ArrowRight,
-  Landmark, Wallet
+  Landmark, Wallet, ParkingCircle, Route, Cog, HardHat,
+  Headset, Hammer
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import LOGO_SRC from "./logo.png";
 
 const CATEGORIES = [
   { id: "valor_viaje", label: "Valor del viaje", icon: Landmark, type: "ingreso" },
-  { id: "anticipo", label: "Anticipo", icon: Wallet, type: "ingreso" },
+  { id: "anticipo", label: "Anticipo", icon: Wallet, type: "anticipo" },
   { id: "combustible", label: "Combustible", icon: Fuel, type: "gasto" },
   { id: "engrasada", label: "Engrasada", icon: Wrench, type: "gasto" },
-  { id: "porcentaje_conductor", label: "% Conductor", icon: Percent, type: "gasto" },
   { id: "propina", label: "Propina", icon: Gift, type: "gasto" },
   { id: "lavada", label: "Lavada", icon: Droplets, type: "gasto" },
   { id: "cargue", label: "Cargue", icon: PackagePlus, type: "gasto" },
   { id: "descargue", label: "Descargue", icon: PackageMinus, type: "gasto" },
+  { id: "parqueadero", label: "Parqueadero", icon: ParkingCircle, type: "gasto" },
+  { id: "transportes_internos", label: "Transportes internos", icon: Route, type: "gasto" },
+  { id: "repuestos", label: "Repuestos", icon: Cog, type: "gasto" },
+  { id: "mano_de_obra", label: "Mano de obra", icon: HardHat, type: "gasto" },
+  { id: "comision_despachador", label: "Comisión despachador", icon: Headset, type: "gasto" },
+  { id: "mantenimiento", label: "Mantenimiento", icon: Hammer, type: "gasto" },
 ];
+
+// El conductor recibe automáticamente este porcentaje del valor del viaje —
+// ya no se registra a mano, se calcula solo.
+const DRIVER_COMMISSION_RATE = 0.08;
 
 const DEFAULT_TRUCKS = [
   { id: "camion1", brand: "", name: "", plate: "" },
@@ -52,17 +62,28 @@ function groupTrips(pool) {
     groups[key].entries.push(e);
   }
   const arr = Object.values(groups).map((g) => {
-    let ingresos = 0, gastos = 0;
+    let ingresos = 0, gastos = 0, anticipos = 0;
     const drivers = new Set();
     let latest = 0;
     for (const e of g.entries) {
-      const isIncome = catInfo(e.category).type === "ingreso";
-      if (isIncome) ingresos += Number(e.amount || 0);
+      const type = catInfo(e.category).type;
+      if (type === "ingreso") ingresos += Number(e.amount || 0);
+      else if (type === "anticipo") anticipos += Number(e.amount || 0);
       else gastos += Number(e.amount || 0);
       if (e.driver) drivers.add(e.driver);
       if ((e.createdAt || 0) > latest) latest = e.createdAt || 0;
     }
-    return { ...g, ingresos, gastos, neto: ingresos - gastos, drivers: Array.from(drivers), latest };
+    const comisionConductor = ingresos * DRIVER_COMMISSION_RATE;
+    return {
+      ...g,
+      ingresos,
+      gastos,
+      anticipos,
+      comisionConductor,
+      neto: ingresos - gastos - comisionConductor,
+      drivers: Array.from(drivers),
+      latest,
+    };
   });
   arr.sort((a, b) => b.latest - a.latest);
   return arr;
@@ -335,19 +356,6 @@ export default function App() {
 
       {phase === "bootstrap" && (
         <BootstrapMaster
-          onCreate={async (username, password) => {
-            // Safety net: re-check right before writing, in case an earlier
-            // load attempt failed transiently and an account actually exists.
-            const existing = await fetchMasterAuth(3, 300);
-            if (existing) {
-              setMasterAuth({ username: existing.username, password: existing.password });
-              setPhase("login");
-              return "exists";
-            }
-            await saveAuth({ master: { username, password }, drivers: [] });
-            setPhase("login");
-            return "created";
-          }}
           onRecheck={async () => {
             const existing = await fetchMasterAuth(3, 300);
             if (existing) {
@@ -456,26 +464,9 @@ function PasswordInput({ value, onChange, placeholder }) {
   );
 }
 
-function BootstrapMaster({ onCreate, onRecheck }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+function BootstrapMaster({ onRecheck }) {
   const [checking, setChecking] = useState(false);
   const [notFound, setNotFound] = useState(false);
-
-  const submit = async () => {
-    if (!username.trim() || password.length < 4) { setError("Usuario requerido y clave de mínimo 4 caracteres."); return; }
-    if (password !== confirm) { setError("Las claves no coinciden."); return; }
-    setError("");
-    setBusy(true);
-    const result = await onCreate(username.trim(), password);
-    setBusy(false);
-    if (result === "exists") {
-      setError("Ya existía una cuenta de administrador — te llevamos a iniciar sesión.");
-    }
-  };
 
   const recheck = async () => {
     setChecking(true);
@@ -489,44 +480,37 @@ function BootstrapMaster({ onCreate, onRecheck }) {
     <div className="max-w-md mx-auto px-5 pt-10 pb-10">
       <div className="text-center mb-8">
         <img src={LOGO_SRC} alt="MMS Group" className="w-56 h-auto mx-auto mb-3" />
-        <div className="text-amber-500 text-xs tracking-[0.3em] uppercase mb-1">MMS GROUP S.A.S · Primer uso</div>
+        <div className="text-amber-500 text-xs tracking-[0.3em] uppercase mb-1">MMS GROUP S.A.S</div>
         <h1 className="text-3xl text-neutral-50 uppercase" style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
-          Crea la cuenta<br />del administrador
+          Aún no hay cuenta<br />de administrador
         </h1>
-        <p className="text-neutral-500 text-sm mt-3">Esta será la cuenta principal para controlar los dos camiones y los conductores.</p>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <input
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Usuario"
-          className="w-full bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-amber-500 text-sm"
-        />
-        <PasswordInput value={password} onChange={setPassword} placeholder="Clave (mín. 4 caracteres)" />
-        <PasswordInput value={confirm} onChange={setConfirm} placeholder="Confirmar clave" />
-        {error && <div className="text-red-500 text-xs">{error}</div>}
-        <button
-          onClick={submit}
-          disabled={busy}
-          className="w-full mt-2 flex items-center justify-center gap-2 bg-amber-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-neutral-950 rounded-md py-3 uppercase tracking-wide"
-          style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}
-        >
-          {busy ? <Loader2 size={16} className="animate-spin" /> : "Crear cuenta"}
-        </button>
-
-        <div className="text-center mt-4">
-          <button
-            onClick={recheck}
-            disabled={checking}
-            className="text-neutral-500 text-xs underline decoration-neutral-700 hover:text-amber-500"
-          >
-            {checking ? "Buscando cuenta existente…" : "¿Ya creaste una cuenta antes? Buscarla de nuevo"}
-          </button>
-          {notFound && (
-            <div className="text-neutral-600 text-xs mt-1.5">No encontramos ninguna cuenta todavía. Puedes crear una arriba.</div>
-          )}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4 flex flex-col gap-2 text-sm text-neutral-400">
+        <div className="flex items-center gap-2 text-amber-400 uppercase text-xs tracking-widest mb-1">
+          <Lock size={14} /> Solo tú puedes crearla
         </div>
+        <p>
+          Por seguridad, la cuenta principal de administrador ya no se crea desde
+          esta pantalla — nadie más puede crearla o cambiarla desde la app.
+        </p>
+        <p>
+          Para configurarla, entra a tu proyecto de Supabase → <span className="text-neutral-200">SQL Editor</span> →
+          corre el archivo <span className="text-neutral-200">lock_admin.sql</span> con tu usuario y clave.
+        </p>
+      </div>
+
+      <div className="text-center mt-6">
+        <button
+          onClick={recheck}
+          disabled={checking}
+          className="text-neutral-400 text-sm underline decoration-neutral-700 hover:text-amber-500"
+        >
+          {checking ? "Buscando cuenta…" : "Ya la configuré — buscarla de nuevo"}
+        </button>
+        {notFound && (
+          <div className="text-neutral-600 text-xs mt-1.5">Todavía no encontramos ninguna cuenta configurada.</div>
+        )}
       </div>
     </div>
   );
@@ -695,8 +679,11 @@ function CategoryPicker({ value, onChange }) {
           const Icon = c.icon;
           const active = value === c.id;
           const isIncome = c.type === "ingreso";
+          const isAdvance = c.type === "anticipo";
           const activeClasses = isIncome
             ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+            : isAdvance
+            ? "border-sky-500 bg-sky-500/10 text-sky-400"
             : "border-amber-500 bg-amber-500/10 text-amber-400";
           return (
             <button
@@ -832,20 +819,26 @@ function ReceiptCard({ entry, onDelete, showDriver }) {
   const cat = catInfo(entry.category);
   const Icon = cat.icon;
   const isIncome = cat.type === "ingreso";
+  const isAdvance = cat.type === "anticipo";
+  const iconColorClass = isIncome ? "text-emerald-500" : isAdvance ? "text-sky-500" : "text-amber-500";
+  const amountColorClass = isIncome ? "text-emerald-400" : isAdvance ? "text-sky-400" : "text-amber-400";
   return (
     <div className="relative bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden">
       <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: "repeating-linear-gradient(90deg, #3f3f46 0 6px, transparent 6px 12px)" }} />
       <div className="flex items-center gap-3 p-3.5">
-        <div className={`bg-neutral-950 border border-neutral-800 rounded-full p-2.5 shrink-0 ${isIncome ? "text-emerald-500" : "text-amber-500"}`}>
+        <div className={`bg-neutral-950 border border-neutral-800 rounded-full p-2.5 shrink-0 ${iconColorClass}`}>
           <Icon size={18} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-neutral-100 uppercase text-sm" style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 600 }}>{cat.label}</span>
-            <span className={`text-base shrink-0 ${isIncome ? "text-emerald-400" : "text-amber-400"}`}>
-              {isIncome ? "+" : "−"} {fmtMoney(entry.amount)}
+            <span className={`text-base shrink-0 ${amountColorClass}`}>
+              {isAdvance ? "◆" : isIncome ? "+" : "−"} {fmtMoney(entry.amount)}
             </span>
           </div>
+          {isAdvance && (
+            <div className="text-sky-600 text-[10px] mt-0.5">Anticipo — no se suma al neto ni a los gastos</div>
+          )}
           <div className="flex items-center gap-2 text-neutral-500 text-xs mt-0.5">
             <Calendar size={11} /> {fmtDate(entry.date)}
             {showDriver && entry.driver && (<><span>·</span><User size={11} /> {entry.driver}</>)}
@@ -976,13 +969,15 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
   }, [selectedTripKey, selectedTrip]);
 
   const totals = useMemo(() => {
-    let ingresos = 0, gastos = 0;
+    let ingresos = 0, gastos = 0, anticipos = 0;
     for (const e of expenses) {
-      const isIncome = catInfo(e.category).type === "ingreso";
-      if (isIncome) ingresos += Number(e.amount || 0);
+      const type = catInfo(e.category).type;
+      if (type === "ingreso") ingresos += Number(e.amount || 0);
+      else if (type === "anticipo") anticipos += Number(e.amount || 0);
       else gastos += Number(e.amount || 0);
     }
-    return { ingresos, gastos, neto: ingresos - gastos };
+    const comisionConductor = ingresos * DRIVER_COMMISSION_RATE;
+    return { ingresos, gastos, anticipos, comisionConductor, neto: ingresos - gastos - comisionConductor };
   }, [expenses]);
 
   if (!driver || !truck) {
@@ -1035,6 +1030,12 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
                 <div className="text-neutral-600 text-[10px] mt-0.5">
                   <span className="text-emerald-500">+{fmtMoney(totals.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.gastos)}</span>
                 </div>
+                {totals.comisionConductor > 0 && (
+                  <div className="text-amber-600 text-[10px] mt-0.5">− Comisión 8% {fmtMoney(totals.comisionConductor)}</div>
+                )}
+                {totals.anticipos > 0 && (
+                  <div className="text-sky-500 text-[10px] mt-0.5">◆ Anticipo {fmtMoney(totals.anticipos)}</div>
+                )}
               </div>
             }
           />
@@ -1102,10 +1103,16 @@ function DriverDashboard({ driver, truck, trucks, expenses, onAdd, onDelete, onE
             <div className="flex items-center gap-2 text-neutral-500 text-xs mt-1.5">
               <Calendar size={12} /> {fmtDate(selectedTrip.date)}
             </div>
-            <div className="flex items-center gap-4 mt-3">
+            <div className="flex items-center gap-4 mt-3 flex-wrap">
               <span className="text-emerald-500 text-sm">+{fmtMoney(selectedTrip.ingresos)}</span>
               <span className="text-amber-500 text-sm">−{fmtMoney(selectedTrip.gastos)}</span>
+              {selectedTrip.comisionConductor > 0 && (
+                <span className="text-amber-600 text-sm">−8% {fmtMoney(selectedTrip.comisionConductor)}</span>
+              )}
               <span className={`text-sm ${selectedTrip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>Neto {fmtMoney(selectedTrip.neto)}</span>
+              {selectedTrip.anticipos > 0 && (
+                <span className="text-sky-500 text-sm">◆ Anticipo {fmtMoney(selectedTrip.anticipos)}</span>
+              )}
             </div>
           </div>
 
@@ -1281,7 +1288,21 @@ function TripCard({ trip, trucks, onClick, showTruck }) {
         </div>
         <div className="text-right shrink-0">
           <div className={`text-lg ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(trip.neto)}</div>
-          <div className="text-neutral-600 text-[10px]">{trip.entries.length} {trip.entries.length === 1 ? "registro" : "registros"}</div>
+          <div className="text-[10px] whitespace-nowrap">
+            <span className="text-emerald-500">+{fmtMoney(trip.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(trip.gastos)}</span>
+          </div>
+          {trip.comisionConductor > 0 && (
+            <div className="text-amber-600 text-[10px] mt-0.5">−8% cond. {fmtMoney(trip.comisionConductor)}</div>
+          )}
+          {trip.ingresos > 0 && (
+            <div className={`text-[10px] mt-0.5 ${trip.neto >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+              {Math.round((trip.neto / trip.ingresos) * 100)}% margen
+            </div>
+          )}
+          {trip.anticipos > 0 && (
+            <div className="text-sky-500 text-[10px] mt-0.5">◆ {fmtMoney(trip.anticipos)}</div>
+          )}
+          <div className="text-neutral-600 text-[10px] mt-0.5">{trip.entries.length} {trip.entries.length === 1 ? "registro" : "registros"}</div>
         </div>
       </div>
     </button>
@@ -1316,10 +1337,16 @@ function TripDetail({ trip, trucks, onBack, onDelete }) {
           {truck && (<><span>·</span><Truck size={12} /> {truckLabel(truck, trucks)}</>)}
           {trip.drivers.length > 0 && (<><span>·</span><User size={12} /> {trip.drivers.join(", ")}</>)}
         </div>
-        <div className="flex items-center gap-4 mt-3">
+        <div className="flex items-center gap-4 mt-3 flex-wrap">
           <span className="text-emerald-500 text-sm">+{fmtMoney(trip.ingresos)}</span>
           <span className="text-amber-500 text-sm">−{fmtMoney(trip.gastos)}</span>
+          {trip.comisionConductor > 0 && (
+            <span className="text-amber-600 text-sm">−8% conductor {fmtMoney(trip.comisionConductor)}</span>
+          )}
           <span className={`text-sm ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>Neto {fmtMoney(trip.neto)}</span>
+          {trip.anticipos > 0 && (
+            <span className="text-sky-500 text-sm">◆ Anticipo {fmtMoney(trip.anticipos)}</span>
+          )}
         </div>
       </div>
 
@@ -1343,19 +1370,30 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
 
   const totals = useMemo(() => {
     const perTruck = {};
-    let grandIngresos = 0, grandGastos = 0;
+    let grandIngresos = 0, grandGastos = 0, grandAnticipos = 0, grandComision = 0;
     for (const t of trucks) {
-      let ingresos = 0, gastos = 0;
+      let ingresos = 0, gastos = 0, anticipos = 0;
       for (const e of expenses[t.id] || []) {
-        const isIncome = catInfo(e.category).type === "ingreso";
-        if (isIncome) ingresos += Number(e.amount || 0);
+        const type = catInfo(e.category).type;
+        if (type === "ingreso") ingresos += Number(e.amount || 0);
+        else if (type === "anticipo") anticipos += Number(e.amount || 0);
         else gastos += Number(e.amount || 0);
       }
-      perTruck[t.id] = { ingresos, gastos, neto: ingresos - gastos };
+      const comisionConductor = ingresos * DRIVER_COMMISSION_RATE;
+      perTruck[t.id] = { ingresos, gastos, anticipos, comisionConductor, neto: ingresos - gastos - comisionConductor };
       grandIngresos += ingresos;
       grandGastos += gastos;
+      grandAnticipos += anticipos;
+      grandComision += comisionConductor;
     }
-    return { perTruck, grandIngresos, grandGastos, grandNeto: grandIngresos - grandGastos };
+    return {
+      perTruck,
+      grandIngresos,
+      grandGastos,
+      grandAnticipos,
+      grandComision,
+      grandNeto: grandIngresos - grandGastos - grandComision,
+    };
   }, [expenses, trucks]);
 
   // Group every gasto/ingreso into "viajes" (trips) by truck + route + date,
@@ -1404,6 +1442,12 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
                 <div className="text-neutral-600 text-[10px] mt-0.5">
                   <span className="text-emerald-500">+{fmtMoney(totals.grandIngresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.grandGastos)}</span>
                 </div>
+                {totals.grandComision > 0 && (
+                  <div className="text-amber-600 text-[10px] mt-0.5">− Comisión 8% {fmtMoney(totals.grandComision)}</div>
+                )}
+                {totals.grandAnticipos > 0 && (
+                  <div className="text-sky-500 text-[10px] mt-0.5">◆ Anticipos {fmtMoney(totals.grandAnticipos)}</div>
+                )}
               </div>
             }
           />
@@ -1430,6 +1474,12 @@ function MasterDashboard({ trucks, expenses, auth, onLogout, onAdd, onDelete, on
                       <div className="text-[10px]">
                         <span className="text-emerald-500">+{fmtMoney(totals.perTruck[t.id].ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.perTruck[t.id].gastos)}</span>
                       </div>
+                      {totals.perTruck[t.id].comisionConductor > 0 && (
+                        <div className="text-amber-600 text-[10px] mt-0.5">−8% {fmtMoney(totals.perTruck[t.id].comisionConductor)}</div>
+                      )}
+                      {totals.perTruck[t.id].anticipos > 0 && (
+                        <div className="text-sky-500 text-[10px] mt-0.5">◆ {fmtMoney(totals.perTruck[t.id].anticipos)}</div>
+                      )}
                     </div>
                   </div>
                 </button>
