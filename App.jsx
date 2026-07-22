@@ -980,48 +980,45 @@ function NewTripForm({ driverName, onCreate }) {
       <div className="text-neutral-400 text-xs uppercase tracking-widest mb-1">Ingresar nuevo viaje</div>
       <p className="text-neutral-600 text-xs mb-4">Establece la ruta y el valor del viaje — luego le vas sumando los gastos.</p>
 
-      <div className="mb-4">
-        <label className="text-neutral-500 text-[10px] uppercase block mb-1">Ruta del viaje</label>
+      <div className="border-2 border-emerald-800/60 bg-emerald-950/20 rounded-lg p-3.5">
+        <label className="text-emerald-600 text-[10px] uppercase block mb-1.5">Ruta del viaje</label>
         <div className="flex items-center gap-2">
           <input
             value={origin}
             onChange={(e) => setOrigin(e.target.value)}
             placeholder="Origen"
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-amber-500"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-emerald-500"
           />
-          <ArrowRight size={16} className="text-neutral-600 shrink-0" />
+          <ArrowRight size={16} className="text-emerald-600 shrink-0" />
           <input
             value={destination}
             onChange={(e) => setDestination(e.target.value)}
             placeholder="Destino"
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-amber-500"
+            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-emerald-500"
           />
         </div>
+
+        <label className="text-emerald-600 text-[10px] uppercase block mb-1.5 mt-3 flex items-center gap-1">
+          <Landmark size={11} /> Valor del viaje
+        </label>
+        <input
+          type="number"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0"
+          className="w-full bg-neutral-950 border border-emerald-700 rounded-md px-3 py-2.5 text-emerald-400 text-xl focus:outline-none focus:border-emerald-500"
+        />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-neutral-500 text-[10px] uppercase block mb-1 flex items-center gap-1">
-            <Landmark size={11} /> Valor del viaje
-          </label>
-          <input
-            type="number"
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0"
-            className="w-full bg-neutral-950 border border-emerald-800/60 rounded-md px-3 py-2 text-emerald-400 text-lg focus:outline-none focus:border-emerald-500"
-          />
-        </div>
-        <div>
-          <label className="text-neutral-500 text-[10px] uppercase block mb-1">Fecha</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 text-sm focus:outline-none focus:border-amber-500"
-          />
-        </div>
+      <div className="mt-3">
+        <label className="text-neutral-500 text-[10px] uppercase block mb-1">Fecha</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 text-sm focus:outline-none focus:border-amber-500"
+        />
       </div>
 
       <button
