@@ -5,7 +5,7 @@ import {
   Eye, EyeOff, LogOut, KeyRound, UserPlus, Percent, Gift,
   Droplets, PackagePlus, PackageMinus, MapPin, ArrowRight,
   Landmark, Wallet, ParkingCircle, Route, Cog, HardHat,
-  Headset, Hammer, MoreHorizontal
+  Headset, Hammer, MoreHorizontal, Building2
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import LOGO_SRC from "./logo.png";
@@ -50,8 +50,9 @@ function groupTrips(pool) {
   const groups = {};
   for (const e of pool) {
     const hasRoute = Boolean(e.origin && e.destination);
+    const companyKey = (e.company || "").trim().toLowerCase();
     const key = hasRoute
-      ? `${e.truckId}|${e.origin.trim().toLowerCase()}|${e.destination.trim().toLowerCase()}|${e.date}`
+      ? `${e.truckId}|${e.origin.trim().toLowerCase()}|${e.destination.trim().toLowerCase()}|${companyKey}|${e.date}`
       : `${e.truckId}|__sinruta__|${e.date}`;
     if (!groups[key]) {
       groups[key] = {
@@ -59,9 +60,13 @@ function groupTrips(pool) {
         truckId: e.truckId,
         origin: hasRoute ? e.origin.trim() : null,
         destination: hasRoute ? e.destination.trim() : null,
+        company: e.company && e.company.trim() ? e.company.trim() : null,
         date: e.date,
         entries: [],
       };
+    }
+    if (!groups[key].company && e.company && e.company.trim()) {
+      groups[key].company = e.company.trim();
     }
     groups[key].entries.push(e);
   }
@@ -157,6 +162,7 @@ export default function App() {
           date: e.date,
           origin: e.origin || "",
           destination: e.destination || "",
+          company: e.company || "",
           note: e.note || "",
           driver: e.driver || "",
           createdAt: Number(e.created_at) || 0,
@@ -321,6 +327,7 @@ export default function App() {
       date: entry.date,
       origin: entry.origin || "",
       destination: entry.destination || "",
+      company: entry.company || "",
       note: entry.note || "",
       driver: entry.driver || "",
       created_at: Date.now(),
@@ -341,6 +348,7 @@ export default function App() {
           date: row.date,
           origin: row.origin,
           destination: row.destination,
+          company: row.company,
           note: row.note,
           driver: row.driver,
           createdAt: row.created_at,
@@ -737,6 +745,7 @@ function ExpenseForm({ onAdd, driverName, driverOptions, onPickDriver }) {
   const [date, setDate] = useState(todayISO());
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
+  const [company, setCompany] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -752,6 +761,7 @@ function ExpenseForm({ onAdd, driverName, driverOptions, onPickDriver }) {
       date,
       origin: origin.trim(),
       destination: destination.trim(),
+      company: company.trim(),
       note: note.trim(),
       driver: driverName,
     });
@@ -788,6 +798,18 @@ function ExpenseForm({ onAdd, driverName, driverOptions, onPickDriver }) {
             className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 text-sm focus:outline-none focus:border-amber-500"
           />
         </div>
+      </div>
+
+      <div className="mt-3">
+        <label className="text-neutral-500 text-[10px] uppercase block mb-1 flex items-center gap-1">
+          <Building2 size={11} /> Empresa
+        </label>
+        <input
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          placeholder="Nombre de la empresa"
+          className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-neutral-200 text-sm focus:outline-none focus:border-amber-500"
+        />
       </div>
 
       <div className="mt-3">
@@ -924,6 +946,7 @@ function AddToTripForm({ trip, driverName, onAdd }) {
       date,
       origin: trip.origin || "",
       destination: trip.destination || "",
+      company: trip.company || "",
       note: note.trim(),
       driver: driverName,
     });
@@ -994,11 +1017,12 @@ function AddToTripForm({ trip, driverName, onAdd }) {
 function NewTripForm({ driverName, onCreate }) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
+  const [company, setCompany] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayISO());
   const [busy, setBusy] = useState(false);
 
-  const canSubmit = origin.trim() && destination.trim() && amount && Number(amount) > 0 && date;
+  const canSubmit = origin.trim() && destination.trim() && company.trim() && amount && Number(amount) > 0 && date;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -1009,6 +1033,7 @@ function NewTripForm({ driverName, onCreate }) {
       date,
       origin: origin.trim(),
       destination: destination.trim(),
+      company: company.trim(),
       note: "",
       driver: driverName,
     });
@@ -1018,10 +1043,20 @@ function NewTripForm({ driverName, onCreate }) {
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
       <div className="text-neutral-400 text-xs uppercase tracking-widest mb-1">Ingresar nuevo viaje</div>
-      <p className="text-neutral-600 text-xs mb-4">Establece la ruta y el valor del viaje — luego le vas sumando los gastos.</p>
+      <p className="text-neutral-600 text-xs mb-4">Establece la empresa, la ruta y el valor del viaje — luego le vas sumando los gastos.</p>
 
       <div className="border-2 border-emerald-800/60 bg-emerald-950/20 rounded-lg p-3.5">
-        <label className="text-emerald-600 text-[10px] uppercase block mb-1.5">Ruta del viaje</label>
+        <label className="text-emerald-600 text-[10px] uppercase block mb-1.5 flex items-center gap-1">
+          <Building2 size={11} /> Empresa
+        </label>
+        <input
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          placeholder="Nombre de la empresa"
+          className="w-full bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2.5 text-neutral-100 text-sm focus:outline-none focus:border-emerald-500"
+        />
+
+        <label className="text-emerald-600 text-[10px] uppercase block mb-1.5 mt-3">Ruta del viaje</label>
         <div className="flex items-center gap-2">
           <input
             value={origin}
@@ -1118,8 +1153,9 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
   const handleNewEntry = async (entry) => {
     await onAdd(entry);
     const hasRoute = Boolean(entry.origin && entry.destination);
+    const companyKey = (entry.company || "").trim().toLowerCase();
     const key = hasRoute
-      ? `${truck.id}|${entry.origin.trim().toLowerCase()}|${entry.destination.trim().toLowerCase()}|${entry.date}`
+      ? `${truck.id}|${entry.origin.trim().toLowerCase()}|${entry.destination.trim().toLowerCase()}|${companyKey}|${entry.date}`
       : `${truck.id}|__sinruta__|${entry.date}`;
     setSelectedTripKey(key);
     setView("detail");
@@ -1147,10 +1183,10 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
             title={truckLabel(truck, trucks)}
             right={
               <div className="text-right">
-                <div className="text-neutral-500 text-[10px] uppercase">Neto</div>
-                <div className={`text-xl ${totals.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(totals.neto)}</div>
+                <div className="text-neutral-500 text-[10px] uppercase">Valor de viajes</div>
+                <div className="text-xl text-emerald-400">{fmtMoney(totals.ingresos)}</div>
                 <div className="text-neutral-600 text-[10px] mt-0.5">
-                  <span className="text-emerald-500">+{fmtMoney(totals.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(totals.gastos)}</span>
+                  <span className="text-amber-500">−{fmtMoney(totals.gastos)} en gastos</span>
                 </div>
                 {totals.comisionConductor > 0 && (
                   <div className="text-amber-600 text-[10px] mt-0.5">− Porcentaje conductor (8.5%) {fmtMoney(totals.comisionConductor)}</div>
@@ -1186,6 +1222,7 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
                     trip={trip}
                     trucks={trucks}
                     showTruck={false}
+                    showProfit={false}
                     payment={tripPayments[trip.key]}
                     onClick={() => { setSelectedTripKey(trip.key); setView("detail"); }}
                   />
@@ -1223,8 +1260,9 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
                 <MapPin size={20} /> Sin ruta asignada
               </div>
             )}
-            <div className="flex items-center gap-2 text-neutral-500 text-xs mt-1.5">
+            <div className="flex items-center gap-2 text-neutral-500 text-xs mt-1.5 flex-wrap">
               <Calendar size={12} /> {fmtDate(selectedTrip.date)}
+              {selectedTrip.company && (<><span>·</span><Building2 size={12} /> {selectedTrip.company}</>)}
             </div>
             <div className="flex items-center gap-4 mt-3 flex-wrap">
               <span className="text-emerald-500 text-sm">+{fmtMoney(selectedTrip.ingresos)}</span>
@@ -1232,7 +1270,6 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
               {selectedTrip.comisionConductor > 0 && (
                 <span className="text-amber-600 text-sm">−% Conductor {fmtMoney(selectedTrip.comisionConductor)}</span>
               )}
-              <span className={`text-sm ${selectedTrip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>Neto {fmtMoney(selectedTrip.neto)}</span>
               {selectedTrip.anticipos > 0 && (
                 <span className="text-sky-500 text-sm">◆ Anticipo {fmtMoney(selectedTrip.anticipos)}</span>
               )}
@@ -1242,7 +1279,9 @@ function DriverDashboard({ driver, truck, trucks, expenses, tripPayments = {}, o
               const saldo = selectedTrip.ingresos - selectedTrip.anticipos;
               return (
                 <div className={`mt-4 rounded-lg border p-3.5 ${payment?.paid ? "border-emerald-800/60 bg-emerald-950/20" : "border-red-900/60 bg-red-950/20"}`}>
-                  <div className="text-neutral-500 text-[10px] uppercase">Saldo que debe la empresa</div>
+                  <div className="text-neutral-500 text-[10px] uppercase">
+                    Saldo que debe {selectedTrip.company || "la empresa"}
+                  </div>
                   <div className={`text-lg ${payment?.paid ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(saldo)}</div>
                   {payment?.paid ? (
                     <div className="text-emerald-600 text-[10px] mt-0.5">✓ Ya pagado</div>
@@ -1397,7 +1436,7 @@ function DriverAccountsPanel({ auth, trucks, onSaveAuth }) {
   );
 }
 
-function TripCard({ trip, trucks, onClick, showTruck, payment }) {
+function TripCard({ trip, trucks, onClick, showTruck, payment, showProfit = true }) {
   const truck = trucks.find((t) => t.id === trip.truckId);
   const hasRoute = Boolean(trip.origin && trip.destination);
   const saldo = trip.ingresos - trip.anticipos;
@@ -1423,23 +1462,30 @@ function TripCard({ trip, trucks, onClick, showTruck, payment }) {
           <div className="flex items-center gap-2 text-neutral-500 text-xs mt-1 flex-wrap">
             <Calendar size={11} /> {fmtDate(trip.date)}
             {showTruck && truck && (<><span>·</span><Truck size={11} /> {truckShort(truck, trucks)}</>)}
+            {trip.company && (<><span>·</span><Building2 size={11} /> {trip.company}</>)}
             {trip.drivers.length > 0 && (<><span>·</span><User size={11} /> {trip.drivers.join(", ")}</>)}
           </div>
           {trip.ingresos > 0 && (
             <div className={`text-[10px] mt-1 uppercase tracking-wide ${isPaid ? "text-emerald-500" : "text-red-400"}`}>
-              {isPaid ? "✓ Saldo pagado" : `Debe la empresa: ${fmtMoney(saldo)}`}
+              {isPaid ? "✓ Saldo pagado" : `Debe ${trip.company || "la empresa"}: ${fmtMoney(saldo)}`}
             </div>
           )}
         </div>
         <div className="text-right shrink-0">
-          <div className={`text-lg ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(trip.neto)}</div>
-          <div className="text-[10px] whitespace-nowrap">
-            <span className="text-emerald-500">+{fmtMoney(trip.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(trip.gastos)}</span>
-          </div>
+          {showProfit ? (
+            <>
+              <div className={`text-lg ${trip.neto >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(trip.neto)}</div>
+              <div className="text-[10px] whitespace-nowrap">
+                <span className="text-emerald-500">+{fmtMoney(trip.ingresos)}</span> · <span className="text-amber-500">−{fmtMoney(trip.gastos)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-lg text-emerald-400">{fmtMoney(trip.ingresos)}</div>
+          )}
           {trip.comisionConductor > 0 && (
             <div className="text-amber-600 text-[10px] mt-0.5">− % Conductor {fmtMoney(trip.comisionConductor)}</div>
           )}
-          {trip.ingresos > 0 && (
+          {showProfit && trip.ingresos > 0 && (
             <div className={`text-[10px] mt-0.5 ${trip.neto >= 0 ? "text-emerald-600" : "text-red-500"}`}>
               {Math.round((trip.neto / trip.ingresos) * 100)}% margen
             </div>
@@ -1490,6 +1536,7 @@ function TripDetail({ trip, trucks, onBack, onDelete, payment, onSetPaid }) {
         <div className="flex items-center gap-2 text-neutral-500 text-xs mt-1.5 flex-wrap">
           <Calendar size={12} /> {fmtDate(trip.date)}
           {truck && (<><span>·</span><Truck size={12} /> {truckLabel(truck, trucks)}</>)}
+          {trip.company && (<><span>·</span><Building2 size={12} /> {trip.company}</>)}
           {trip.drivers.length > 0 && (<><span>·</span><User size={12} /> {trip.drivers.join(", ")}</>)}
         </div>
         <div className="flex items-center gap-4 mt-3 flex-wrap">
@@ -1508,7 +1555,7 @@ function TripDetail({ trip, trucks, onBack, onDelete, payment, onSetPaid }) {
           <div className={`mt-4 rounded-lg border p-3.5 ${isPaid ? "border-emerald-800/60 bg-emerald-950/20" : "border-red-900/60 bg-red-950/20"}`}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-neutral-500 text-[10px] uppercase">Saldo que debe la empresa</div>
+                <div className="text-neutral-500 text-[10px] uppercase">Saldo que debe {trip.company || "la empresa"}</div>
                 <div className={`text-lg ${isPaid ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(saldo)}</div>
                 {isPaid && payment?.paidAt && (
                   <div className="text-emerald-600 text-[10px] mt-0.5">✓ Pagado el {fmtDate(new Date(payment.paidAt).toISOString().slice(0, 10))}</div>
